@@ -66,6 +66,7 @@ typedef struct job
     size_t process_number; /* for count of process */
     char notified;         /* true if user told about stopped job */
     int completed;         /* true if all process has completed */
+    Action action;         /* action */
 } Job;
 
 #endif

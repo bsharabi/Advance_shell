@@ -66,7 +66,6 @@ int addJob()
     tailJob->head = NULL;
     tailJob->tail = NULL;
     tailJob->process_number = 0;
-
     return 1;
 }
 
@@ -147,6 +146,7 @@ void printJob()
     {
         printf("   ----------_-JOB-_----------\n");
         printf("compleate -> %d notified -> %d \n", current->completed, current->notified);
+        printf("Action -> %d  \n", current->action);
         Process *process = current->head;
 
         while (process != NULL)

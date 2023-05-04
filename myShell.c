@@ -242,10 +242,12 @@ void readExec(Process *p)
         perror("error");
 }
 
-int buildCondition(Job **job)
+void buildCondition(Job **job)
 {
-
-    return 1;
+    printf(">");
+    getInput(command);
+    initJob(command);
+    puts("");
 }
 
 void startJob()
@@ -358,6 +360,7 @@ void replaceStrings(char *str1, char *str2, char *delim)
 int initJob(char *command)
 {
     char *token;
+    int flagAct = 0;
     int ampr = (getFirstJob() == NULL) ? 0 : 1;
     int isquit = 0;
     int newJobFlag = 0;
@@ -388,9 +391,11 @@ int initJob(char *command)
             }
             else if (strcmp(token, "|") == 0)
             {
+                Action temp = getTailJob()->action;
                 if (!addJob() || !addProcess())
                     return 0;
                 newJobFlag = 0;
+                getTailJob()->action = temp;
                 isquit = 0;
             }
             else if (!newJobFlag)
@@ -420,10 +425,24 @@ int initJob(char *command)
         {
             if (strcmp(token, "quit") == 0)
                 isquit = 1;
-            if (isEmpty() && (!addJob() || !addProcess()))
+            if (strcmp(token, "if") == 0)
+                flagAct = cond;
+            else if (strcmp(token, "then") == 0 && getTailJob()->action == cond && getTailJob()->head->argv.size >= 1)
+                flagAct = then;
+            else if (strcmp(token, "else") == 0 && getTailJob()->action == then && getTailJob()->head->argv.size >= 1)
+                flagAct = econd;
+            else if (strcmp(token, "fi") == 0 && getTailJob()->action == econd && getTailJob()->head->argv.size >= 1)
+                flagAct = fi;
+            else if (isEmpty())
+                flagAct = Normal;
+            if (flagAct && (!addJob() || !addProcess()))
                 return 0;
-            if (!setProcessArgument(getTailJob()->tail, token))
+            else if (flagAct)
+                getTailJob()->action = flagAct;
+
+            if ((flagAct == Normal || flagAct == 0) && !setProcessArgument(getTailJob()->tail, token))
                 return 0;
+            flagAct = 0;
             if (strcmp(token, "read") == 0 && getTailJob()->tail->argv.size == 1)
             {
                 getTailJob()->tail->action = Read;
@@ -436,9 +455,6 @@ int initJob(char *command)
                     return 0;
                 newJobFlag = 1;
             }
-            // if(strcmp(token, "if")==0){
-
-            // }
             ampr = 0;
         }
     }
@@ -570,11 +586,11 @@ int run()
             freeJob();
             continue;
         }
-        startJob();
+        // startJob();
         updateStatusHistories();
         // puts(getTailHistories()->status);
         // showList();
-        // printJob();
+        printJob();
         // printAllHistory();
         freeJob();
     }
