@@ -1,36 +1,37 @@
-FLAGS =-Wall -g
-CC = gcc #if we want to change compiler
+CXX=clang++-9
+CXXVERSION=c++2a
+SOURCE_PATH=sources
+OBJECT_PATH=objects
+CXXFLAGS=-std=$(CXXVERSION) -Werror -Wsign-conversion -I$(SOURCE_PATH) 
+TIDY_FLAGS=-extra-arg=-std=$(CXXVERSION) -checks=bugprone-*,clang-analyzer-*,cppcoreguidelines-*,performance-*,portability-*,readability-*,-cppcoreguidelines-pro-bounds-pointer-arithmetic,-cppcoreguidelines-owning-memory --warnings-as-errors=*
+VALGRIND_FLAGS=-v --leak-check=full --show-leak-kinds=all  --error-exitcode=99
 
+SOURCES=$(wildcard $(SOURCE_PATH)/*.cpp)
+HEADERS=$(wildcard $(SOURCE_PATH)/*.hpp)
+OBJECTS=$(subst sources/,objects/,$(subst .cpp,.o,$(SOURCES)))
 
-myshell: myShell.o DataListVariable.o Job.o Histories.o
-	$(CC) $(FLAGS) -o myshell myShell.o DataListVariable.o Job.o Histories.o
+# run: myshell test
+run: myshell 	
 
+myshell:myshell.o $(OBJECTS) 
+	$(CXX) $(CXXFLAGS) $^ -o  $@ 
 
-myShell.o: myShell.c myShell.h
-	$(CC) $(FLAGS) -c myShell.c 
+test:TestRunner.o Test.o $(OBJECTS)
+	$(CXX) $(CXXFLAGS) $^ -o  $@ 
 
-DataListVariable: DataListVariable.o
+%.o: %.cpp $(HEADERS)
+	$(CXX) $(CXXFLAGS) --compile $< -o $@ 
 
-DataListVariable.o: DataListVariable.c DataListVariable.h
-	$(CC) $(FLAGS) -c DataListVariable.c 
-
-Job: Job.o
-
-Job.o: Job.c Job.h
-	$(CC) $(FLAGS) -c Job.c 
-
-Histories: Histories.o
-
-Histories.o: Histories.c Histories.h
-	$(CC) $(FLAGS) -c Histories.c 
-
-.PHONY: clean
-clean:
-	rm -f *.o *.a *.so *.out test Job DataListVariable myshell
-
+$(OBJECT_PATH)/%.o: $(SOURCE_PATH)/%.cpp $(HEADERS)
+	$(CXX) $(CXXFLAGS) --compile $< -o $@ 
 
 tidy:
-	valgrind --leak-check=full ./myshell
+	clang-tidy $(SOURCES) $(TIDY_FLAGS) --
 
-run:
-	./myshell
+valgrind: myshell test
+	valgrind --tool=memcheck $(VALGRIND_FLAGS) ./myshell 
+	# valgrind --tool=memcheck $(VALGRIND_FLAGS) ./test 2>&1 | { egrep "lost| at " || true; }
+
+
+clean:
+	rm -f $(OBJECTS) *.o *.a *.so *.out test myshell myfile colors.txt

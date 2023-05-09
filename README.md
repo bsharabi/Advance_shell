@@ -6,11 +6,10 @@
 ## Running Programm:
 ```bash
 # Clone the repository
-$ git clone https://github.com/MightyArty/Simple_Shell.git
+$ git clone https://github.com/bsharabi/Advance_shell.git
 # Go into the repository
-$ cd Simple_Shell
+$ cd Advance_shell
 # Open the terminal on Linux
 $ Run "make"
-$ Run Server "make run"
-$ Run Shell "make cmd"V
+$ Run "./myshell"
 ```

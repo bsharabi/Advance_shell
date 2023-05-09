@@ -1,21 +1,9 @@
-#include "Histories.h"
+#include "Histories.hpp"
 
 History *tailHistories = NULL;
 History *headHistories = NULL;
 History *currentHistories = NULL;
 
-History *getHeadHistories()
-{
-    return headHistories;
-}
-History *getTailHistories()
-{
-    return tailHistories;
-}
-History *getCurrentHistories()
-{
-    return currentHistories;
-}
 
 int addHistories(char *command)
 {

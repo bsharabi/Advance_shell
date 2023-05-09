@@ -1,0 +1,805 @@
+#include "shell.hpp"
+Action action;
+regex_t regex;
+pid_t pid_m;
+int quit = 1;
+int *fd = NULL;
+int countOfJob;
+char command[MAX_COMMANDS] = {0};
+char prompt[MAX_PROMPT] = "hello";
+char symbol[MAX_SYMBOL][5] = {
+    "|",
+    ">>",
+    ">",
+    "2>",
+    "<",
+    "=",
+    "read",
+};
+void welcome()
+{
+    const char *const logo[] = {"                     aRTI//BARK             ____\n",
+                                "             simpleSH//////////Shl         |B//S|", "    |\n",
+                                "          SH//////YS           shell//Sh   |A@@I|", "    | Welcome to Advance shell\n",
+                                " Sim aSystemSH//Sh              sys//B     |R$$M|", "    | Version 1.0\n",
+                                " BarABBBaraKk///Sh               sM//E     |A^^P|", "    |\n",
+                                "         pCCCCY//h          eSS@@ y//E     |K**L|", "    | https://github.com/BSharabi\n",
+                                "         SPPPP///a          pP///AC//E     |&&&E|", "    |\n",
+                                "              A//A            smP////S     |A**S|", "    | Have fun!\n",
+                                "              p///Ac            sE///a     |R##H|", "    |\n",
+                                "              P////YCpc           L//L     |T!!E|", "    | Wanna support advance shell?\n",
+                                "       scccccp///pSP///p          p//l     |I%%L|", "    |\n",
+                                "      sY/////////y  caa           S//h     |U--L|", "    |\n",
+                                "       shsSellH//Ya              pY/Sh     |MIGT|", "    |\n",
+                                "        sH/ShS////YCc          aC//Yp      |____|", "    |\n",
+                                "         Si  shlll//SHsimpleSH//LSs\n",
+                                "                  shell//////IPSHs\n",
+                                "                       baraks\n", NULL};
+    int i = 0;
+    purple();
+    printf("\n------------------------------------\033[1m Barak Sharabi------------------------------------\n");
+    printf("\033[1m yes master?\033[0m\n\n");
+    green();
+    do
+    {
+        printf("%s", logo[i++]);
+        if (i % 2 != 0 || i > 26)
+            green();
+        else
+            blue();
+    } while (logo[i]);
+    resetColor();
+    puts("\n");
+}
+
+void getInput(char *command)
+{
+    fgets(command, MAX_INPUT, stdin);
+    command[strlen(command) - 1] = '\0';
+}
+
+void getLocation(char *prompt)
+{
+    uid_t uid = geteuid();
+    struct passwd *pw = getpwuid(uid);
+    if (pw == NULL)
+    {
+        printf("Error: could not get username\n");
+        exit(EXIT_FAILURE);
+    }
+    char hostName[MAX_PROMPT];
+    if (gethostname(hostName, MAX_PROMPT) == -1)
+    {
+        perror("gethostname() error");
+        exit(EXIT_FAILURE);
+    }
+    sprintf(prompt, "\033[1;32m%s\033[0;32m@\033[1;32m%s\033[0;37m:\033[1;37m\033[0;34m%s\033[0m", pw->pw_name, hostName, getcwd(NULL, 0));
+}
+
+int replaceVar(char **data)
+{
+    int i = 0;
+    Data *d;
+    while (data[i])
+    {
+        if (data[i][0] == '$')
+        {
+            if ((d = search(data[i] + 1)))
+            {
+                data[i] = (char *)realloc(data[i], strlen(d->value) + 1);
+                strcpy(data[i], d->value);
+            }
+            else
+                data[i][0] = '\0';
+        }
+        i++;
+    }
+    return 1;
+}
+
+void changePrompt(char *prompt, char *newPrompt)
+{
+    strcpy(prompt, newPrompt);
+}
+
+void initPipe(int write, int read, int in)
+{
+    if (write != -1 && read == -1)
+        dup2(fd[write], STDOUT_FILENO);
+    else if (write != -1 && read != -1)
+    {
+        dup2(fd[write], STDOUT_FILENO);
+        if (in)
+            dup2(fd[read], STDIN_FILENO);
+    }
+    else if (in)
+        dup2(fd[read], STDIN_FILENO);
+}
+
+void execJob(int write, int read, int in, Process *p)
+{
+    replaceVar(p->argv.data);
+    if (p->argv.size == 0)
+    {
+        int currentJobNumber = (int)tailJob->job_number;
+        getInput(command);
+        initJob(command);
+        initFd(&write, &read, &in, currentJobNumber, 1,tailJob);
+        // printf("write %d read %d in %d\n", write, read, in);
+        // printJob();
+    }
+    if (strcmp("quit", p->argv.data[0]) == 0)
+    {
+        quit = 0;
+        return;
+    }
+    if (strcmp("cd", p->argv.data[0]) == 0)
+    {
+        chdir((p->argv.data[1] != NULL) ? p->argv.data[1] : "/");
+        getLocation(prompt);
+        return;
+    }
+    pid_t pid;
+    if ((pid = fork()) == 0)
+    {
+        if (write != -1 || read != -1)
+            initPipe(write, read, in);
+        execvp(p->argv.data[0], p->argv.data);
+        exit(EXIT_FAILURE);
+    }
+    else
+        p->pid = pid;
+}
+
+void appendToFile(Process *p)
+{
+    pid_t pid = fork();
+    if (pid == 0)
+    {
+        int size = p->argv.size - 1;
+
+        int fd = open(p->argv.data[size], O_WRONLY | O_APPEND | O_CREAT, 0660);
+        dup2(fd, STDOUT_FILENO);
+        close(fd);
+        p->argv.data[size] = NULL;
+        execvp(p->argv.data[0], p->argv.data);
+        exit(EXIT_FAILURE);
+    }
+    else
+        p->pid = pid;
+}
+
+void redirectOut(Process *p)
+{
+    pid_t pid;
+    if ((pid = fork()) == 0)
+    {
+        int size = p->argv.size - 1;
+        int fd = creat(p->argv.data[size], 0660);
+        dup2(fd, (p->action == Write) ? STDOUT_FILENO : STDERR_FILENO);
+        close(fd);
+        p->argv.data[size] = NULL;
+        execvp(p->argv.data[0], p->argv.data);
+        exit(EXIT_FAILURE);
+    }
+    else
+        p->pid = pid;
+}
+
+void varSubstitution(Process *p)
+{
+
+    if (strcmp(p->argv.data[0], "prompt") == 0)
+    {
+        if (strcmp(p->argv.data[1], "pwd") == 0)
+            getLocation(prompt);
+        else
+            changePrompt(prompt, p->argv.data[1]);
+    }
+    else if (p->argv.data[0][0] == '$')
+    {
+        if (!add(p->argv.data[0] + 1, p->argv.data[1]))
+            perror("error");
+    }
+    else
+        prerrToken(p->argv.data[0]);
+}
+
+void reversePipe(int write, int read, int in, Process *p)
+{
+    pid_t pid = fork();
+    if (pid == 0)
+    {
+        int size = p->argv.size - 1;
+
+        int fd = open(p->argv.data[size], O_RDONLY);
+        if (fd == -1)
+        {
+            printf("-myShell: %s: No such file or directory\n", p->argv.data[size]);
+            exit(EXIT_FAILURE);
+        }
+
+        dup2(fd, STDIN_FILENO);
+        close(fd);
+        p->argv.data[size] = NULL;
+        if (write != -1 || read != -1)
+            initPipe(write, read, in);
+        execvp(p->argv.data[0], p->argv.data);
+        exit(EXIT_FAILURE);
+    }
+    else
+        p->pid = pid;
+}
+
+void readExec(Process *p)
+{
+    getInput(command);
+    if (!add(p->argv.data[1], command))
+        perror("error");
+}
+
+int buildCondition()
+{
+    int finish;
+    while (1)
+    {
+        printf(">");
+        getInput(command);
+
+        if (!(finish = (initJob(command))))
+        {
+            perror("Error in the structure of the operation");
+            freeJob();
+            return 0;
+        }
+        if (finish == 2)
+            break;
+    }
+    return 1;
+}
+
+void initFd(int *write, int *read, int *in, int numberJob, int flag, Job *job)
+{
+    if (job->job_number > 0)
+    {
+        if (flag || numberJob == 0)
+        {
+            *read = -1;
+            *write = numberJob * 2 + 1;
+            *in = 0;
+        }
+        else if (job->job_number > numberJob)
+        {
+            *read = numberJob * 2 - 2;
+            *write = numberJob * 2 + 1;
+            *in = 1;
+        }
+        else
+        {
+            *read = numberJob * 2 - 2;
+            *write = -1;
+            *in = 1;
+        }
+    }
+}
+void startProccess(Process *p, int write, int read, int in)
+{
+    while (p)
+    {
+        switch (p->action)
+        {
+        case Append:
+            appendToFile(p);
+            break;
+        case Write:
+        case WriteError:
+            redirectOut(p);
+            break;
+        case ReversePipe:
+            reversePipe(write, read, in, p);
+            break;
+        case Placement:
+            varSubstitution(p);
+            break;
+        case Normal:
+            execJob(write, read, in, p);
+            break;
+        case Read:
+            readExec(p);
+            break;
+        default:
+            break;
+        }
+        p = p->next;
+        in = 0;
+    }
+}
+
+void startJobCondition()
+{
+    Job *nextCond = headCondition;
+    while (nextCond->action != headCondition->action)
+        nextCond = nextCond->next;
+
+    Job *current = headCondition;
+    int write = -1, read = -1, in = 0;
+    pid_t pid;
+    int status;
+
+    while (current != NULL)
+    {
+        Process *p = current->head;
+        switch (current->action)
+        {
+        case cond:
+            initFd(&write, &read, &in, current->job_number, 0, headCondition);
+            startProccess(p, write, read, in);
+            break;
+        case then:
+
+            break;
+        case econd:
+
+        
+            break;
+        default:
+            break;
+        }
+        if (headCondition->job_number)
+        {
+            if (current->job_number == 0)
+                close(fd[current->job_number+1]);
+            else
+            {
+                close(*fd + current->job_number * 2 + 1);
+                close(*fd + current->job_number * 2 - 2);
+            }
+        }
+        int count = 1;
+        while ((pid = wait(&status)) != -1)
+        {
+            updateStatusProcess(pid, WIFEXITED(status), 0, WEXITSTATUS(status));
+            if (current->process_number > 1)
+                printf("[%d] %d\n", count, pid);
+            count++;
+        }
+        current = current->next;
+    }  
+}
+
+void startJob()
+{
+
+    Job *current = headJob;
+    int write = -1, read = -1, in = 0;
+    pid_t pid;
+    int status;
+
+    while (current != NULL)
+    {
+        Process *p = current->head;
+        initFd(&write, &read, &in, current->job_number, 0, headJob);
+        // printf("write %d read %d in %d\n", write, read, in);
+        startProccess(p, write, read, in);
+        if (tailJob->job_number)
+        {
+            if (current->job_number == 0)
+                close(fd[1]);
+            else
+            {
+                close(*fd + current->job_number * 2 + 1);
+                close(*fd + current->job_number * 2 - 2);
+            }
+        }
+        int count = 1;
+        while ((pid = wait(&status)) != -1)
+        {
+            updateStatusProcess(pid, WIFEXITED(status), 0, WEXITSTATUS(status));
+            if (current->process_number > 1)
+                printf("[%d] %d\n", count, pid);
+            count++;
+        }
+        current = current->next;
+    }
+    int i;
+    if (tailJob->job_number)
+    {
+        i = 0;
+        while (tailJob->job_number > i)
+        {
+            close(fd[i * 2]);
+            close(fd[i * 2 + 1]);
+            i++;
+        }
+    }
+}
+
+void printPrompt(char *prompt)
+{
+    green();
+    printf("%s", prompt);
+    white();
+    printf("$ ");
+    resetColor();
+}
+
+void freeFD()
+{
+    if (fd != NULL)
+    {
+        free(fd);
+        fd = NULL;
+    }
+}
+
+int prerrToken(char *token)
+{
+    red();
+    printf("-myShell: syntax error near unexpected token `%s'\n", token);
+    resetColor();
+    return 0;
+}
+
+void freeAllAllocateMemory()
+{
+    freeJob();
+    freeFD();
+}
+
+int initPipeArray()
+{
+
+    if (tailJob->job_number > 0)
+        if ((fd = (int *)malloc(sizeof(int) * (unsigned int)(tailJob->job_number) * 2)) == NULL)
+            return 0;
+    int i = 0;
+    while (tailJob->job_number > i)
+    {
+        if (pipe(fd + (i * 2)) == -1)
+        {
+            perror("pipe");
+            exit(EXIT_FAILURE);
+            return 0;
+        }
+        i++;
+    }
+    return 1;
+}
+
+void replaceStrings(char *str1, const char *str2, const char *delim)
+{
+    char *pos = str1;
+    while ((pos = strstr(pos, delim)) != NULL)
+    {
+        if ((pos == str1 || *(pos - 1) == ' ') && (*(pos + 2) == ' ' || *(pos + 2) == '\0'))
+        {
+            size_t len1 = strlen(str1);
+            size_t len2 = strlen(str2);
+            unsigned int pos_offset = pos - str1;
+            memmove(pos + len2, pos + 2, len1 - (pos_offset + 2)); // shift remaining string to make room for str2
+            memcpy(pos, str2, len2);                               // copy str2 to str1
+            pos += len2;                                           // move pointer after the replaced string
+        }
+        else
+        {
+            pos += 2; // move pointer after the non-replaced string
+        }
+    }
+}
+
+int initJob(char *command)
+{
+    char *token;
+    int ampr = (headJob == NULL) ? 0 : 1;
+    int isquit = 0;
+    int newJobFlag = 0;
+    int condition = 0;
+    int continueBuildCondition = (headCondition == NULL) ? 0 : 1;
+
+    int isCond = -1;
+    while ((token = strtok(command, " ")) != NULL)
+    {
+
+        command = NULL;
+        // After quit or '='can only be Action
+        if ((newJobFlag || isquit) && regexec(&regex, token, 0, NULL, 0) != 0)
+            return prerrToken(token);
+
+        if (!isEmpty() && regexec(&regex, token, 0, NULL, 0) == 0)
+        {
+            if (ampr || isCond == 0)
+                return prerrToken(token);
+
+            if (strcmp(token, "&") == 0)
+            {
+                if (!addProcess())
+                    return 0;
+                isquit = 0;
+                ampr = 1;
+                newJobFlag = 0;
+            }
+            else if (strcmp(token, "|") == 0)
+            {
+                if (!addJob() || !addProcess())
+                    return 0;
+                newJobFlag = 0;
+                isquit = 0;
+                tailJob->action = action;
+            }
+            else if (!newJobFlag)
+            {
+                for (int i = 0; i < MAX_SYMBOL; i++)
+                    if (strcmp(token, symbol[i]) == 0)
+                    {
+                        tailJob->tail->action = (Action)i;
+                        break;
+                    }
+                if ((token = strtok(command, " ")) != NULL)
+                {
+                    if (!setProcessArgument(tailJob->tail, token))
+                        return 0;
+                }
+                else
+                    return 0;
+                newJobFlag = 1;
+            }
+            else
+            {
+
+                return prerrToken(token);
+            }
+        }
+        else
+        {
+            int argumentSize = (tailJob != NULL) ? tailJob->tail->argv.size : 0;
+            if (!continueBuildCondition)
+            {
+
+                isCond = strcmp(token, "if");
+
+                if (isCond == 0 && argumentSize == 0)
+                {
+                    if (action == cond)
+                        return prerrToken(token);
+                    condition++;
+                    action = cond;
+                }
+            }
+            else
+            {
+                int flag = -1;
+                int err = -1;
+                if ((flag = strcmp(token, "fi")) == 0)
+                {
+                    if ((action != then && action != econd))
+                        return prerrToken(token);
+                    action = Normal;
+                    return 2;
+                }
+
+                if ((flag = strcmp(token, "if")) == 0)
+                {
+                    if (action != cond)
+                        action = cond;
+                    else
+                        err = 2;
+                }
+                else if ((flag = strcmp(token, "then")) == 0)
+                {
+                    if (action == cond && argumentSize != 0)
+                        action = then;
+                    else
+                        err = 2;
+                }
+                else if ((flag = strcmp(token, "else")) == 0)
+                {
+                    if (action == then && argumentSize != 0)
+                        action = econd;
+                    else
+                        err = 2;
+                }
+                if (err == 2)
+                {
+                    return prerrToken(token);
+                }
+                if (flag == 0 && (!addJob() || !addProcess()))
+                    return 0;
+                tailJob->action = action;
+                if (!flag)
+                    continue;
+            }
+            if (strcmp(token, "quit") == 0)
+                isquit = 1;
+            if ((condition == 1 || isEmpty()) && (!addJob() || !addProcess()))
+                return 0;
+            if ((isCond != 0 || argumentSize != 0) && !setProcessArgument(tailJob->tail, token))
+                return 0;
+            if (strcmp(token, "read") == 0 && tailJob->tail->argv.size == 1)
+            {
+                tailJob->tail->action = Read;
+                if ((token = strtok(command, " ")) != NULL)
+                {
+                    if (!setProcessArgument(tailJob->tail, token))
+                        return 0;
+                }
+                else
+                    return 0;
+                newJobFlag = 1;
+            }
+            ampr = 0;
+            if (condition == 1)
+            {
+                headCondition = tailJob;
+                headCondition->action = action;
+                condition = 0;
+            }
+        }
+    }
+
+    if ((action == cond && !continueBuildCondition) && !buildCondition())
+        return 0;
+    else if (continueBuildCondition && action != Normal)
+        return 1;
+
+    freeFD();
+    initPipeArray();
+    Job *current = headJob;
+    if (headCondition && current != headCondition)
+    {
+        while (current->next != headCondition)
+            current = current->next;
+        current->next = NULL;
+        tailJob = current;
+    }
+    else if (headCondition == headJob)
+        tailJob = headJob = NULL;
+
+    return 2;
+}
+
+void sigHandler(int signum)
+{
+
+    switch (signum)
+    {
+    case SIGINT: // dad is dead
+        if (getpid() == pid_m)
+        {
+            blue();
+            system("echo -n '\b\b  \b\b'");
+            if (headJob)
+            {
+                printPrompt(prompt);
+                printf("You typed Control-C!\n");
+            }
+            else
+            {
+                printf("You typed Control-C!\n");
+                printPrompt(prompt);
+            }
+        }
+        else if (headJob)
+        {
+            kill(getpid(), 0);
+            exit(EXIT_FAILURE);
+        }
+        fflush(0);
+    default:
+        return;
+    }
+}
+
+void initSignal()
+{
+    signal(SIGINT, sigHandler);
+}
+
+int buildRegex()
+{
+    char pattern[32] = "^(\\||>|>>|2>|&|=|<)$";
+    if (regcomp(&regex, pattern, REG_EXTENDED) != 0)
+    {
+        printf("Failed to compile regex.\n");
+        return 0;
+    }
+    return 1;
+}
+
+void trimCommand()
+{
+    int i;
+    for (i = strlen(command) - 1; i >= 0; i--)
+        if (!isspace(command[i]))
+            break;
+    command[i + 1] = '\0';
+}
+
+void Substitution(char *command)
+{
+
+    if (tailHistories)
+    {
+        replaceStrings(command, tailHistories->command, (const char *)"!!");
+        replaceStrings(command, tailHistories->status, (const char *)"$?");
+    }
+    else
+    {
+
+        replaceStrings(command, (const char *)"  ", (const char *)"$?");
+
+        replaceStrings(command, (const char *)"0 ", (const char *)"$?");
+    }
+}
+
+void updateStatusHistories()
+{
+    Job *job = headJob;
+    while (job)
+    {
+        Process *p = job->head;
+        while (p)
+        {
+            switch (p->status)
+            {
+            case 0:
+                strcpy(tailHistories->status, "0 \n");
+
+                break;
+            case 1:
+                strcpy(tailHistories->status, "1 \n");
+
+                break;
+            case 2:
+                strcpy(tailHistories->status, "2 \n");
+
+                break;
+
+            default:
+                break;
+            }
+            p = p->next;
+        }
+        job = job->next;
+    }
+}
+
+int run()
+{
+    while (quit)
+    {
+        action = Normal;
+        printPrompt(prompt);
+        getInput(command);
+        Substitution(command);
+        addHistories(command);
+        trimCommand();
+        if (strlen(command) < 2)
+        {
+            if (strcmp(command, "") != 0)
+                prerrToken(command);
+            strcpy(tailHistories->status, "2 Exit");
+            continue;
+        }
+        if (!(initJob(command)))
+        {
+            // perror("Error in the structure of the operation");
+            freeJob();
+            continue;
+        }
+        // puts("----------------Job-----------------");
+        // printJob();
+        // puts("----------------JobCond-----------------");
+        // printJobCondition();
+        // if (headCondition)
+        //     startJobCondition();
+        if (headJob)
+            startJob();
+        updateStatusHistories();
+        freeJob();
+        freeFD();
+    }
+    freeAllAllocateMemory();
+    regfree(&regex);
+    puts("logout");
+    return 0;
+}

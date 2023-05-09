@@ -1,5 +1,5 @@
 /**
- * @file DataListVariable.h
+ * @file Histories.h
  * @author Barak Sharabi (https://github.com/bsharabi)
  * @brief
  * @version 0.1
@@ -8,7 +8,8 @@
  * @copyright Copyright (c) 2023
  *
  */
-
+#ifndef __HISTORIES_H__
+#define __HISTORIES_H__
 #include <time.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -23,11 +24,12 @@ typedef struct history_cmd
     char status[32];          /* true if command has completed */
 } History;
 
-
+extern History *tailHistories;
+extern History *headHistories;
+extern History *currentHistories;
 
 int addHistories(char *command);
 void freeHistories();
 void printAllHistory();
-History *getHeadHistories();
-History *getTailHistories();
-History *getCurrentHistories();
+
+#endif

@@ -1,6 +1,8 @@
-#include "Job.h"
+#include "Job.hpp"
 Job *headJob = NULL;
 Job *tailJob = NULL;
+Job *headCondition = NULL;
+
 int isEmpty()
 {
     return (headJob == NULL) ? 1 : 0;
@@ -23,7 +25,7 @@ int appendArgumentToList(List *array, const char *str)
     {
         // Resize the array if it's full
         array->capacity *= GROWTH_FACTOR;
-        array->data = (char **)realloc(array->data, array->capacity * sizeof(char *));
+        array->data = (char **)realloc(array->data, (unsigned int)array->capacity * sizeof(char *));
         if (!array->data)
             return 0;
     }
@@ -51,7 +53,7 @@ int addJob()
     Job *newJob = (Job *)malloc(sizeof(Job));
     if (newJob == NULL)
         return 0;
-
+    newJob->job_number = (tailJob) ? tailJob->job_number + 1 : 0;
     if (headJob == NULL)
     {
         headJob = newJob;
@@ -62,21 +64,14 @@ int addJob()
         tailJob->next = newJob;
         tailJob = newJob;
     }
+
     tailJob->next = NULL;
     tailJob->head = NULL;
     tailJob->tail = NULL;
     tailJob->process_number = 0;
+    newJob->action = Normal;
+
     return 1;
-}
-
-Job *getFirstJob()
-{
-    return headJob;
-}
-
-Job *getTailJob()
-{
-    return tailJob;
 }
 
 int addProcess()
@@ -136,7 +131,15 @@ void freeJob()
         free(current);
         current = next;
     }
-    headJob = tailJob = NULL;
+    current = headCondition;
+    while (current != NULL)
+    {
+        Job *next = current->next;
+        freeProccess(current->head);
+        free(current);
+        current = next;
+    }
+    headJob = tailJob = headCondition = NULL;
 }
 
 void printJob()
@@ -144,9 +147,10 @@ void printJob()
     Job *current = headJob;
     while (current != NULL)
     {
-        printf("   ----------_-JOB-_----------\n");
+        printf("   ----------_-JOB-_%d----------\n", current->job_number);
+        printf("Action %d\n", current->action);
+
         printf("compleate -> %d notified -> %d \n", current->completed, current->notified);
-        printf("Action -> %d  \n", current->action);
         Process *process = current->head;
 
         while (process != NULL)
@@ -165,7 +169,32 @@ void printJob()
         puts("");
     }
 }
+void printJobCondition()
+{
+    Job *current = headCondition;
+    while (current != NULL)
+    {
+        printf("   ----------_-JOB-_%d----------\n", current->job_number);
+        printf("Action %d\n", current->action);
 
+        Process *process = current->head;
+
+        while (process != NULL)
+        {
+            printf("   ----------_-PROCESS-_ %d----------\n", process->action);
+            printf("Argument: ");
+            for (int i = 0; i < process->argv.size; i++)
+            {
+                printf("%s ", process->argv.data[i]);
+            }
+            printf("\nStatus -> %d compleate -> %d stop -> %d ", process->status, process->completed, process->stopped);
+            process = process->next;
+            puts("");
+        }
+        current = current->next;
+        puts("");
+    }
+}
 int updateStatusProcess(pid_t pid, int completed, int stop, int status)
 {
     Job *head = headJob;

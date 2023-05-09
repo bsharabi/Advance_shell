@@ -36,8 +36,9 @@ typedef struct data
     char *value;
 } Data;
 
+extern Data *headData;
+extern Data *tailData;
 
-#endif
 // Function to check if the list is empty
 int Empty();
 
@@ -54,3 +55,4 @@ void freeLinkedList();
 
 // Function to print the linked list
 void showList();
+#endif

@@ -1,5 +1,15 @@
-#ifndef __Job_H__
-#define __Job_H__
+/**
+ * @file Job.h
+ * @author Barak Sharabi (https://github.com/bsharabi)
+ * @brief
+ * @version 0.1
+ * @date 2023-04-01
+ *
+ * @copyright Copyright (c) 2023
+ *
+ */
+#ifndef __Job_HPP__
+#define __Job_HPP__
 #include <time.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -32,7 +42,8 @@ typedef enum action
     Read,        /* read command  */
     Normal,      /* normal command  */
     cond,        /* condition command  */
-    econd,       /* else condition command  */
+    econd,       /* else if condition command  */
+    elcond,      /* else  condition command  */
     then,        /* else condition command  */
     fi           /* else condition command  */
 } Action;
@@ -58,18 +69,21 @@ typedef struct process
 /* A job is a pipeline of processes.  */
 typedef struct job
 {
-    struct job *next;      /* next active job */
-    Process *head;         /* head of list of processes in this job */
-    Process *tail;         /* tail of list of processes in this job */
-    pid_t pgid;            /* process group ID */
-    size_t job_number;     /* for count of job */
-    size_t process_number; /* for count of process */
-    char notified;         /* true if user told about stopped job */
-    int completed;         /* true if all process has completed */
-    Action action;         /* action */
+    struct job *next;   /* next active job */
+    Process *head;      /* head of list of processes in this job */
+    Process *tail;      /* tail of list of processes in this job */
+    pid_t pgid;         /* process group ID */
+    int job_number;     /* for count of job */
+    Action action;      /* action */
+    int process_number; /* for count of process */
+    char notified;      /* true if user told about stopped job */
+    int completed;      /* true if all process has completed */
+    
 } Job;
 
-#endif
+extern Job *headJob;
+extern Job *tailJob;
+extern Job *headCondition;
 
 int isEmpty();
 int initListArgument(List *array);
@@ -81,6 +95,6 @@ int setProcessArgument(Process *process, char *argument);
 void freeProccess(Process *process);
 void freeJob();
 void printJob();
-Job *getFirstJob();
-Job *getTailJob();
+void updateStatusHistories();
 int updateStatusProcess(pid_t pid, int completed, int stop, int status);
+#endif
